@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NMRMatch — Precision Spectroscopy</title>
+<script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;0,9..40,800;1,9..40,400&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root { 
+    --bg: #050505; 
+    --card: rgba(255, 255, 255, 0.04); 
+    --card-hover: rgba(255, 255, 255, 0.1);
+    --text-primary: #ffffff; 
+    --text-secondary: #a1a1a6; 
+    --accent: #0071e3; 
+    --ok: #30d158; 
+    --bad: #ff453a; 
+    --border: rgba(255, 255, 255, 0.12);
+    --glass: rgba(10, 10, 10, 0.85);
+    --nmr-canvas: #ffffff;
+    --pulse-color: rgba(0, 113, 227, 0.15);
+  }
+  
+  * { box-sizing: border-box; }
+
+  body { 
+    margin: 0; 
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; 
+    background: var(--bg); 
+    color: var(--text-primary); 
+    overflow-x: hidden;
+  }
+
+  /* --- Background --- */
+  #pulse-container {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background: radial-gradient(circle at var(--m-x, 50%) var(--m-y, 50%), var(--pulse-color) 0%, transparent 50%);
+  }
+  #grid-layer {
+    position: fixed; inset: 0; z-index: -1;
+    background-image: linear-gradient(var(--border) 1.5px, transparent 1.5px), linear-gradient(90deg, var(--border) 1.5px, transparent 1.5px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(circle at center, black 30%, transparent 90%);
+    animation: pulseGrid 6s infinite ease-in-out;
+  }
+  @keyframes pulseGrid { 0%, 100% { opacity: 0.2; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.02); } }
+
+  /* --- Layout --- */
+  #start-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  
+  .hero-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    padding: 70px 80px;
+    border-radius: 60px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: center;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,255,255,0.05);
+    max-width: 750px;
+    width: 90%;
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-20px); }
+  }
+
+  .hero-title { 
+    font-size: 5.5rem; 
+    font-weight: 850; 
+    letter-spacing: -4px; 
+    margin: 0; 
+    line-height: 0.9;
+    background: linear-gradient(180deg, #fff 30%, rgba(255,255,255,0.5) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 10px 20px rgba(0,0,0,0.3));
+  }
+  .hero-title span { 
+    color: var(--accent);
+    -webkit-text-fill-color: var(--accent);
+    text-shadow: 0 0 30px rgba(0, 113, 227, 0.4);
+  }
+
+  .hero-subtitle {
+    color: var(--text-secondary); margin-top: 15px; margin-bottom: 16px;
+    font-size: 1.3rem; font-weight: 400; letter-spacing: 0.5px;
+  }
+  .hero-mol-count {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent); font-size: 0.85rem; font-weight: 600;
+    letter-spacing: 2px; margin-bottom: 40px;
+    text-transform: uppercase;
+  }
+
+  header { 
+    background: var(--glass); backdrop-filter: blur(30px); border-bottom: 1px solid var(--border);
+    padding: 12px 0; position: sticky; top: 0; z-index: 100; 
+  }
+  .controls { max-width: 1400px; margin: 0 auto; padding: 0 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .group-side { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .group-right { justify-content: flex-end; }
+  
+  .logo-link { text-decoration: none; color: inherit; transition: transform 0.2s ease; cursor: pointer; }
+  .logo-link:hover { transform: scale(1.05); }
+  .logo-center { font-size: 1.4rem; font-weight: 800; letter-spacing: -1px; text-align: center; white-space: nowrap; }
+  .logo-center span { color: var(--accent); }
+
+  .btn-diff {
+    background: var(--text-primary); color: var(--bg); border: none; padding: 20px 44px;
+    border-radius: 20px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: 0.3s;
+    box-shadow: 0 10px 30px rgba(255,255,255,0.1);
+    font-family: inherit;
+  }
+  .btn-diff:hover { transform: scale(1.05); filter: brightness(0.9); box-shadow: 0 15px 40px rgba(255,255,255,0.2); }
+
+  .btn-ui {
+    background: var(--card); color: var(--text-primary); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 12px; font-weight: 600; cursor: pointer; font-size: 13px;
+    font-family: inherit;
+  }
+  .btn-ui:disabled { opacity: 0.2; cursor: not-allowed; }
+
+  select, .checkbox-ui {
+    background: var(--card); border: 1px solid var(--border); color: var(--text-primary);
+    padding: 8px 14px; border-radius: 10px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    font-family: inherit;
+  }
+
+  .spectrum-box { 
+    background: var(--nmr-canvas); border-radius: 28px; padding: 30px 30px 20px 30px; 
+    margin: 2rem auto; border: 1px solid var(--border); max-width: 1100px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.2);
+  }
+  canvas#nmr { width: 100%; height: 340px; display: block; cursor: crosshair; }
+
+  .choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1100px; margin: 0 auto 4rem auto; padding: 0 24px; }
+  .card { 
+    background: var(--card); border: 1px solid var(--border); border-radius: 24px; padding: 20px; 
+    cursor: pointer; text-align: center; transition: 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+  }
+  .card:hover { border-color: var(--accent); background: var(--card-hover); transform: translateY(-6px); }
+  .card.correct { background: var(--ok) !important; color: white !important; border-color: var(--ok) !important; }
+  .card.wrong { background: var(--bad) !important; color: white !important; border-color: var(--bad) !important; }
+
+  .mol-canvas { 
+    width: 100%; 
+    height: 140px; 
+    background: white; 
+    border-radius: 16px;
+  }
+
+  .card-name { font-weight: 700; margin-top: 12px; font-size: 1rem; }
+  .card-formula { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px; }
+
+  /* Peak info tooltip on spectrum */
+  .peak-info {
+    position: absolute; background: rgba(0,0,0,0.85); color: white; padding: 6px 10px;
+    border-radius: 8px; font-size: 11px; font-family: 'JetBrains Mono', monospace;
+    pointer-events: none; white-space: nowrap; z-index: 10;
+    display: none;
+  }
+
+  /* Explanation panel */
+  .explanation {
+    max-width: 1100px; margin: -2rem auto 3rem; padding: 0 24px;
+    display: none;
+  }
+  .explanation.show { display: block; }
+  .explanation-inner {
+    background: rgba(48, 209, 88, 0.08); border: 1px solid rgba(48, 209, 88, 0.2);
+    border-radius: 20px; padding: 24px 28px;
+  }
+  .explanation h3 { margin: 0 0 12px; color: var(--ok); font-size: 1rem; }
+  .explanation table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .explanation th { text-align: left; color: var(--text-secondary); font-weight: 600; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .explanation td { padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: 'JetBrains Mono', monospace; }
+
+  /* Progress bar */
+  .progress-wrap {
+    max-width: 1100px; margin: 0 auto; padding: 0 24px;
+  }
+  .progress-bar {
+    height: 4px; background: var(--card); border-radius: 2px; overflow: hidden; margin-bottom: 1rem;
+  }
+  .progress-fill {
+    height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s ease;
+  }
+
+  #loader { position: fixed; inset: 0; background: #000; z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Difficulty labels */
+  .diff-label {
+    display: block; font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 1px; text-transform: uppercase;
+  }
+
+  @media (max-width: 700px) {
+    .hero-card { padding: 40px 30px; border-radius: 32px; }
+    .hero-title { font-size: 3.5rem; letter-spacing: -2px; }
+    .btn-diff { padding: 16px 30px; font-size: 1rem; }
+    .controls { padding: 0 12px; }
+    .spectrum-box { padding: 16px; border-radius: 18px; margin: 1rem auto; }
+    canvas#nmr { height: 260px; }
+    .choices { grid-template-columns: 1fr; gap: 14px; padding: 0 12px; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<div id="loader">
+    <div style="width: 40px; height: 40px; border: 3px solid #222; border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+    <p style="color:white; font-size:11px; letter-spacing:4px; margin-top:20px;">CALIBRATING SPECTROMETER</p>
+</div>
+
+<div id="pulse-container"></div>
+<div id="grid-layer"></div>
+
+<div id="start-page">
+    <div class="hero-card">
+        <div class="hero-title">NMR<span>Match</span></div>
+        <p class="hero-subtitle">The best way to learn ¹H-NMR spectroscopy :)</p>
+        <div class="hero-mol-count" id="mol-count-display"></div>
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+            <button class="btn-diff" onclick="startGame(1)">
+                Beginner
+                <span class="diff-label" id="count1"></span>
+            </button>
+            <button class="btn-diff" onclick="startGame(2)">
+                Intermediate
+                <span class="diff-label" id="count2"></span>
+            </button>
+            <button class="btn-diff" onclick="startGame(3)">
+                Advanced
+                <span class="diff-label" id="count3"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="game-page" style="display:none">
+    <header>
+      <div class="controls">
+        <div class="group-side">
+            <button class="btn-ui" id="backBtn" disabled onclick="prevRound()">← Back</button>
+            <a href="javascript:location.reload()" class="logo-link">
+                <div class="logo-center">NMR<span>Match</span></div>
+            </a>
+        </div>
+        <div class="group-side group-right">
+            <select id="solventSelect" onchange="drawSpectrum()">
+                <option value="7.26">CDCl₃ (7.26)</option>
+                <option value="2.50">DMSO-d₆ (2.50)</option>
+                <option value="3.31">MeOD (3.31)</option>
+                <option value="4.79">D₂O (4.79)</option>
+            </select>
+            <label class="checkbox-ui"><input type="checkbox" id="solvOn" checked onchange="drawSpectrum()"> Solvent</label>
+            <label class="checkbox-ui"><input type="checkbox" id="intsOn" checked onchange="drawSpectrum()"> Integrals</label>
+            <label class="checkbox-ui"><input type="checkbox" id="multiOn" onchange="drawSpectrum()"> Multiplicity</label>
+            <div style="font-weight: 800; font-size: 13px; background: var(--card); padding: 8px 14px; border-radius: 12px; border: 1px solid var(--border)">
+                <span style="color:var(--ok)">✓ <span id="correct-count">0</span></span>
+                <span style="color:var(--bad); margin-left:10px;">✗ <span id="wrong-count">0</span></span>
+            </div>
+            <button class="btn-ui" style="background:var(--accent); border:none; color:white" onclick="nextRound()">Skip →</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    </div>
+
+    <div class="spectrum-box" style="position: relative;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:16px; font-size:10px; color:#8e8e93; font-weight:800; letter-spacing:2px; text-transform:uppercase;">
+            <span>¹H-NMR Spectrum (400 MHz)</span>
+            <span id="solventLabel">REF: CDCl₃</span>
+        </div>
+        <canvas id="nmr"></canvas>
+        <div class="peak-info" id="peakInfo"></div>
+    </div>
+
+    <div class="explanation" id="explanation">
+        <div class="explanation-inner">
+            <h3>✓ Peak Assignment</h3>
+            <div id="explanationContent"></div>
+        </div>
+    </div>
+
+    <div id="choices" class="choices"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// MOLECULE DATABASE — ~90 molecules with accurate ¹H chemical shifts
+// p = δ (ppm), m = multiplicity, i = integration (number of H)
+// Multiplicities: s=singlet, d=doublet, t=triplet, q=quartet, 
+//                 sept=septet, m=multiplet, dd=doublet of doublets
+// Chemical shifts based on Pretsch tables & standard NMR references
+// ═══════════════════════════════════════════════════════════════════
+
+const LEVELS = {
+  1: [
+    // === SIMPLE SOLVENTS & REAGENTS ===
+    { name: "Acetone", smiles: "CC(=O)C", formula: "C₃H₆O", peaks: [{p:2.17, m:"s", i:6, assign:"CH₃"}] },
+    { name: "Methanol", smiles: "CO", formula: "CH₄O", peaks: [{p:3.43, m:"s", i:3, assign:"CH₃"}] },
+    { name: "Ethanol", smiles: "CCO", formula: "C₂H₆O", peaks: [{p:1.25, m:"t", i:3, assign:"CH₃"}, {p:3.72, m:"q", i:2, assign:"CH₂"}] },
+    { name: "Diethyl Ether", smiles: "CCOCC", formula: "C₄H₁₀O", peaks: [{p:1.21, m:"t", i:6, assign:"CH₃"}, {p:3.48, m:"q", i:4, assign:"O-CH₂"}] },
+    { name: "Ethyl Acetate", smiles: "CCOC(C)=O", formula: "C₄H₈O₂", peaks: [{p:1.26, m:"t", i:3, assign:"CH₃ (ethyl)"}, {p:2.05, m:"s", i:3, assign:"CO-CH₃"}, {p:4.12, m:"q", i:2, assign:"O-CH₂"}] },
+    { name: "Acetic Acid", smiles: "CC(=O)O", formula: "C₂H₄O₂", peaks: [{p:2.10, m:"s", i:3, assign:"CH₃"}] },
+    { name: "MTBE", smiles: "COC(C)(C)C", formula: "C₅H₁₂O", peaks: [{p:1.19, m:"s", i:9, assign:"C(CH₃)₃"}, {p:3.22, m:"s", i:3, assign:"O-CH₃"}] },
+    { name: "Cyclohexane", smiles: "C1CCCCC1", formula: "C₆H₁₂", peaks: [{p:1.44, m:"s", i:12, assign:"CH₂"}] },
+    { name: "1,4-Dioxane", smiles: "C1COCCO1", formula: "C₄H₈O₂", peaks: [{p:3.71, m:"s", i:8, assign:"O-CH₂"}] },
+    { name: "Acetic Anhydride", smiles: "CC(=O)OC(C)=O", formula: "C₄H₆O₃", peaks: [{p:2.22, m:"s", i:6, assign:"CH₃"}] },
+    { name: "1,2-Dichloroethane", smiles: "ClCCCl", formula: "C₂H₄Cl₂", peaks: [{p:3.73, m:"s", i:4, assign:"CH₂"}] },
+    { name: "Isopropanol", smiles: "CC(O)C", formula: "C₃H₈O", peaks: [{p:1.18, m:"d", i:6, assign:"CH₃"}, {p:4.02, m:"sept", i:1, assign:"CH"}] },
+    { name: "Acetonitrile", smiles: "CC#N", formula: "C₂H₃N", peaks: [{p:2.00, m:"s", i:3, assign:"CH₃"}] },
+    { name: "Dimethylformamide", smiles: "CN(C)C=O", formula: "C₃H₇NO", peaks: [{p:2.89, m:"s", i:3, assign:"N-CH₃"}, {p:2.97, m:"s", i:3, assign:"N-CH₃"}, {p:8.02, m:"s", i:1, assign:"CHO"}] },
+    { name: "tert-Butanol", smiles: "CC(C)(C)O", formula: "C₄H₁₀O", peaks: [{p:1.28, m:"s", i:9, assign:"C(CH₃)₃"}] },
+    { name: "Chloroform", smiles: "ClC(Cl)Cl", formula: "CHCl₃", peaks: [{p:7.26, m:"s", i:1, assign:"CH"}] },
+    { name: "Dichloromethane", smiles: "ClCCl", formula: "CH₂Cl₂", peaks: [{p:5.30, m:"s", i:2, assign:"CH₂"}] },
+    { name: "DMSO", smiles: "CS(=O)C", formula: "C₂H₆OS", peaks: [{p:2.62, m:"s", i:6, assign:"CH₃"}] },
+    { name: "Acetaldehyde", smiles: "CC=O", formula: "C₂H₄O", peaks: [{p:2.20, m:"d", i:3, assign:"CH₃"}, {p:9.80, m:"q", i:1, assign:"CHO"}] },
+    { name: "Diisopropyl Ether", smiles: "CC(C)OC(C)C", formula: "C₆H₁₄O", peaks: [{p:1.12, m:"d", i:12, assign:"CH₃"}, {p:3.60, m:"sept", i:2, assign:"CH"}] },
+    { name: "Tetrahydrofuran", smiles: "C1CCOC1", formula: "C₄H₈O", peaks: [{p:1.85, m:"m", i:4, assign:"CH₂"}, {p:3.76, m:"m", i:4, assign:"O-CH₂"}] },
+    { name: "Propanoic Acid", smiles: "CCC(=O)O", formula: "C₃H₆O₂", peaks: [{p:1.16, m:"t", i:3, assign:"CH₃"}, {p:2.36, m:"q", i:2, assign:"CH₂"}] },
+    { name: "n-Butanol", smiles: "CCCCO", formula: "C₄H₁₀O", peaks: [{p:0.94, m:"t", i:3, assign:"CH₃"}, {p:1.40, m:"m", i:2, assign:"CH₂"}, {p:1.56, m:"m", i:2, assign:"CH₂"}, {p:3.68, m:"t", i:2, assign:"O-CH₂"}] },
+    { name: "Methyl Formate", smiles: "COC=O", formula: "C₂H₄O₂", peaks: [{p:3.77, m:"s", i:3, assign:"O-CH₃"}, {p:8.08, m:"s", i:1, assign:"CHO"}] },
+    { name: "Diethylamine", smiles: "CCNCC", formula: "C₄H₁₁N", peaks: [{p:1.06, m:"t", i:6, assign:"CH₃"}, {p:2.62, m:"q", i:4, assign:"N-CH₂"}] },
+  ],
+  2: [
+    // === AROMATIC COMPOUNDS ===
+    { name: "Toluene", smiles: "Cc1ccccc1", formula: "C₇H₈", peaks: [{p:2.36, m:"s", i:3, assign:"CH₃"}, {p:7.20, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "Anisole", smiles: "COc1ccccc1", formula: "C₇H₈O", peaks: [{p:3.80, m:"s", i:3, assign:"O-CH₃"}, {p:6.92, m:"m", i:3, assign:"Ar-H (o,p)"}, {p:7.30, m:"m", i:2, assign:"Ar-H (m)"}] },
+    { name: "Acetophenone", smiles: "CC(=O)c1ccccc1", formula: "C₈H₈O", peaks: [{p:2.60, m:"s", i:3, assign:"CO-CH₃"}, {p:7.46, m:"m", i:3, assign:"Ar-H (m,p)"}, {p:7.96, m:"d", i:2, assign:"Ar-H (o)"}] },
+    { name: "Methyl Benzoate", smiles: "COC(=O)c1ccccc1", formula: "C₈H₈O₂", peaks: [{p:3.91, m:"s", i:3, assign:"O-CH₃"}, {p:7.44, m:"m", i:3, assign:"Ar-H (m,p)"}, {p:8.04, m:"d", i:2, assign:"Ar-H (o)"}] },
+    { name: "Benzyl Chloride", smiles: "ClCc1ccccc1", formula: "C₇H₇Cl", peaks: [{p:4.58, m:"s", i:2, assign:"CH₂-Cl"}, {p:7.37, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "Para-Xylene", smiles: "Cc1ccc(C)cc1", formula: "C₈H₁₀", peaks: [{p:2.31, m:"s", i:6, assign:"CH₃"}, {p:7.07, m:"s", i:4, assign:"Ar-H"}] },
+    { name: "Ethylbenzene", smiles: "CCc1ccccc1", formula: "C₈H₁₀", peaks: [{p:1.24, m:"t", i:3, assign:"CH₃"}, {p:2.66, m:"q", i:2, assign:"CH₂"}, {p:7.28, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "Benzaldehyde", smiles: "O=Cc1ccccc1", formula: "C₇H₆O", peaks: [{p:7.52, m:"m", i:3, assign:"Ar-H (m,p)"}, {p:7.87, m:"d", i:2, assign:"Ar-H (o)"}, {p:10.00, m:"s", i:1, assign:"CHO"}] },
+    { name: "Nitrobenzene", smiles: "[O-][N+](=O)c1ccccc1", formula: "C₆H₅NO₂", peaks: [{p:7.55, m:"t", i:2, assign:"Ar-H (m)"}, {p:7.68, m:"t", i:1, assign:"Ar-H (p)"}, {p:8.22, m:"d", i:2, assign:"Ar-H (o)"}] },
+    { name: "p-Anisaldehyde", smiles: "COc1ccc(C=O)cc1", formula: "C₈H₈O₂", peaks: [{p:3.89, m:"s", i:3, assign:"O-CH₃"}, {p:7.01, m:"d", i:2, assign:"Ar-H (near OMe)"}, {p:7.84, m:"d", i:2, assign:"Ar-H (near CHO)"}, {p:9.88, m:"s", i:1, assign:"CHO"}] },
+    { name: "1,4-Dimethoxybenzene", smiles: "COc1ccc(OC)cc1", formula: "C₈H₁₀O₂", peaks: [{p:3.77, m:"s", i:6, assign:"O-CH₃"}, {p:6.83, m:"s", i:4, assign:"Ar-H"}] },
+    { name: "Benzyl Acetate", smiles: "CC(=O)OCc1ccccc1", formula: "C₉H₁₀O₂", peaks: [{p:2.08, m:"s", i:3, assign:"CO-CH₃"}, {p:5.10, m:"s", i:2, assign:"O-CH₂"}, {p:7.34, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "Styrene", smiles: "C=Cc1ccccc1", formula: "C₈H₈", peaks: [{p:5.24, m:"d", i:1, assign:"=CH₂ (cis)"}, {p:5.77, m:"d", i:1, assign:"=CH₂ (trans)"}, {p:6.72, m:"dd", i:1, assign:"=CH"}, {p:7.35, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "Phenol", smiles: "Oc1ccccc1", formula: "C₆H₆O", peaks: [{p:6.86, m:"m", i:3, assign:"Ar-H (o,p)"}, {p:7.24, m:"m", i:2, assign:"Ar-H (m)"}] },
+    { name: "Aniline", smiles: "Nc1ccccc1", formula: "C₆H₇N", peaks: [{p:6.63, m:"m", i:3, assign:"Ar-H (o,p)"}, {p:7.12, m:"m", i:2, assign:"Ar-H (m)"}] },
+    { name: "Benzyl Alcohol", smiles: "OCc1ccccc1", formula: "C₇H₈O", peaks: [{p:4.63, m:"s", i:2, assign:"CH₂-OH"}, {p:7.34, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "2-Phenylethanol", smiles: "OCCc1ccccc1", formula: "C₈H₁₀O", peaks: [{p:2.86, m:"t", i:2, assign:"Ar-CH₂"}, {p:3.84, m:"t", i:2, assign:"CH₂-OH"}, {p:7.28, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "4-Chlorotoluene", smiles: "Cc1ccc(Cl)cc1", formula: "C₇H₇Cl", peaks: [{p:2.32, m:"s", i:3, assign:"CH₃"}, {p:7.10, m:"d", i:2, assign:"Ar-H"}, {p:7.24, m:"d", i:2, assign:"Ar-H"}] },
+    { name: "Mesitylene", smiles: "Cc1cc(C)cc(C)c1", formula: "C₉H₁₂", peaks: [{p:2.25, m:"s", i:9, assign:"CH₃"}, {p:6.78, m:"s", i:3, assign:"Ar-H"}] },
+    { name: "4-Nitrotoluene", smiles: "Cc1ccc([N+](=O)[O-])cc1", formula: "C₇H₇NO₂", peaks: [{p:2.46, m:"s", i:3, assign:"CH₃"}, {p:7.30, m:"d", i:2, assign:"Ar-H (near CH₃)"}, {p:8.11, m:"d", i:2, assign:"Ar-H (near NO₂)"}] },
+    { name: "Benzoic Acid", smiles: "OC(=O)c1ccccc1", formula: "C₇H₆O₂", peaks: [{p:7.48, m:"m", i:3, assign:"Ar-H (m,p)"}, {p:8.12, m:"d", i:2, assign:"Ar-H (o)"}] },
+    { name: "Methyl Salicylate", smiles: "COC(=O)c1ccccc1O", formula: "C₈H₈O₃", peaks: [{p:3.92, m:"s", i:3, assign:"O-CH₃"}, {p:6.87, m:"m", i:2, assign:"Ar-H"}, {p:7.42, m:"m", i:1, assign:"Ar-H"}, {p:7.80, m:"d", i:1, assign:"Ar-H"}] },
+    { name: "4-Methylanisole", smiles: "COc1ccc(C)cc1", formula: "C₈H₁₀O", peaks: [{p:2.27, m:"s", i:3, assign:"Ar-CH₃"}, {p:3.77, m:"s", i:3, assign:"O-CH₃"}, {p:6.82, m:"d", i:2, assign:"Ar-H"}, {p:7.06, m:"d", i:2, assign:"Ar-H"}] },
+    { name: "Indane", smiles: "C1CC2=CC=CC=C2C1", formula: "C₉H₁₀", peaks: [{p:2.08, m:"m", i:2, assign:"CH₂ (β)"}, {p:2.89, m:"t", i:4, assign:"CH₂ (α)"}, {p:7.18, m:"m", i:4, assign:"Ar-H"}] },
+    { name: "Veratrole", smiles: "COc1ccccc1OC", formula: "C₈H₁₀O₂", peaks: [{p:3.87, m:"s", i:6, assign:"O-CH₃"}, {p:6.90, m:"m", i:4, assign:"Ar-H"}] },
+    { name: "Cumene", smiles: "CC(C)c1ccccc1", formula: "C₉H₁₂", peaks: [{p:1.25, m:"d", i:6, assign:"CH₃"}, {p:2.92, m:"sept", i:1, assign:"CH"}, {p:7.28, m:"m", i:5, assign:"Ar-H"}] },
+    { name: "Acetanilide", smiles: "CC(=O)Nc1ccccc1", formula: "C₈H₉NO", peaks: [{p:2.16, m:"s", i:3, assign:"CO-CH₃"}, {p:7.10, m:"m", i:1, assign:"Ar-H (p)"}, {p:7.32, m:"m", i:2, assign:"Ar-H (m)"}, {p:7.55, m:"d", i:2, assign:"Ar-H (o)"}] },
+    { name: "p-Cresol", smiles: "Cc1ccc(O)cc1", formula: "C₇H₈O", peaks: [{p:2.26, m:"s", i:3, assign:"CH₃"}, {p:6.73, m:"d", i:2, assign:"Ar-H (near OH)"}, {p:7.03, m:"d", i:2, assign:"Ar-H (near CH₃)"}] },
+    { name: "4-Bromoanisole", smiles: "COc1ccc(Br)cc1", formula: "C₇H₇BrO", peaks: [{p:3.77, m:"s", i:3, assign:"O-CH₃"}, {p:6.78, m:"d", i:2, assign:"Ar-H (near OMe)"}, {p:7.35, m:"d", i:2, assign:"Ar-H (near Br)"}] },
+    { name: "Isopropylbenzene Ketone", smiles: "CC(C)C(=O)c1ccccc1", formula: "C₁₀H₁₂O", peaks: [{p:1.22, m:"d", i:6, assign:"CH₃"}, {p:3.57, m:"sept", i:1, assign:"CH"}, {p:7.46, m:"m", i:3, assign:"Ar-H"}, {p:7.97, m:"d", i:2, assign:"Ar-H (o)"}] },
+  ],
+  3: [
+    // === PHARMACEUTICAL & COMPLEX MOLECULES ===
+    { name: "Caffeine", smiles: "Cn1cnc2c1c(=O)n(C)c(=O)n2C", formula: "C₈H₁₀N₄O₂", peaks: [{p:3.36, m:"s", i:3, assign:"N₁-CH₃"}, {p:3.52, m:"s", i:3, assign:"N₃-CH₃"}, {p:3.98, m:"s", i:3, assign:"N₇-CH₃"}, {p:7.52, m:"s", i:1, assign:"C₈-H"}] },
+    { name: "Aspirin", smiles: "CC(=O)Oc1ccccc1C(=O)O", formula: "C₉H₈O₄", peaks: [{p:2.36, m:"s", i:3, assign:"CO-CH₃"}, {p:7.18, m:"d", i:1, assign:"Ar-H"}, {p:7.35, m:"t", i:1, assign:"Ar-H"}, {p:7.63, m:"t", i:1, assign:"Ar-H"}, {p:8.12, m:"d", i:1, assign:"Ar-H"}] },
+    { name: "Ibuprofen", smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O", formula: "C₁₃H₁₈O₂", peaks: [{p:0.90, m:"d", i:6, assign:"(CH₃)₂-CH"}, {p:1.50, m:"d", i:3, assign:"CH-CH₃"}, {p:1.84, m:"m", i:1, assign:"CH"}, {p:2.45, m:"d", i:2, assign:"Ar-CH₂"}, {p:3.71, m:"q", i:1, assign:"α-CH"}, {p:7.12, m:"d", i:2, assign:"Ar-H"}, {p:7.22, m:"d", i:2, assign:"Ar-H"}] },
+    { name: "Vanillin", smiles: "COc1cc(C=O)ccc1O", formula: "C₈H₈O₃", peaks: [{p:3.94, m:"s", i:3, assign:"O-CH₃"}, {p:6.95, m:"d", i:1, assign:"Ar-H"}, {p:7.04, m:"d", i:1, assign:"Ar-H"}, {p:7.42, m:"dd", i:1, assign:"Ar-H"}, {p:9.82, m:"s", i:1, assign:"CHO"}] },
+    { name: "Paracetamol", smiles: "CC(=O)Nc1ccc(O)cc1", formula: "C₈H₉NO₂", peaks: [{p:2.08, m:"s", i:3, assign:"CO-CH₃"}, {p:6.72, m:"d", i:2, assign:"Ar-H (near OH)"}, {p:7.38, m:"d", i:2, assign:"Ar-H (near NH)"}] },
+    { name: "Benzocaine", smiles: "CCOC(=O)c1ccc(N)cc1", formula: "C₉H₁₁NO₂", peaks: [{p:1.36, m:"t", i:3, assign:"CH₃"}, {p:4.30, m:"q", i:2, assign:"O-CH₂"}, {p:6.61, m:"d", i:2, assign:"Ar-H (near NH₂)"}, {p:7.82, m:"d", i:2, assign:"Ar-H (near CO)"}] },
+    { name: "Cinnamaldehyde", smiles: "O=C/C=C/c1ccccc1", formula: "C₉H₈O", peaks: [{p:6.70, m:"dd", i:1, assign:"=CH-CHO"}, {p:7.40, m:"m", i:5, assign:"Ar-H"}, {p:7.52, m:"d", i:1, assign:"Ar-CH=CH"}, {p:9.70, m:"d", i:1, assign:"CHO"}] },
+    { name: "Phenacetin", smiles: "CCOc1ccc(NC(C)=O)cc1", formula: "C₁₀H₁₃NO₂", peaks: [{p:1.40, m:"t", i:3, assign:"CH₃ (ethyl)"}, {p:2.13, m:"s", i:3, assign:"CO-CH₃"}, {p:4.00, m:"q", i:2, assign:"O-CH₂"}, {p:6.83, m:"d", i:2, assign:"Ar-H"}, {p:7.40, m:"d", i:2, assign:"Ar-H"}] },
+    { name: "Diethyl Phthalate", smiles: "CCOC(=O)c1ccccc1C(=O)OCC", formula: "C₁₂H₁₄O₄", peaks: [{p:1.38, m:"t", i:6, assign:"CH₃"}, {p:4.40, m:"q", i:4, assign:"O-CH₂"}, {p:7.54, m:"m", i:2, assign:"Ar-H"}, {p:7.73, m:"m", i:2, assign:"Ar-H"}] },
+    { name: "Eugenol", smiles: "COc1cc(CC=C)ccc1O", formula: "C₁₀H₁₂O₂", peaks: [{p:3.33, m:"d", i:2, assign:"Ar-CH₂"}, {p:3.88, m:"s", i:3, assign:"O-CH₃"}, {p:5.08, m:"m", i:2, assign:"=CH₂"}, {p:5.95, m:"m", i:1, assign:"=CH"}, {p:6.70, m:"m", i:3, assign:"Ar-H"}] },
+    { name: "Lidocaine", smiles: "CCN(CC)CC(=O)Nc1c(C)cccc1C", formula: "C₁₄H₂₂N₂O", peaks: [{p:1.07, m:"t", i:6, assign:"N(CH₂CH₃)₂"}, {p:2.22, m:"s", i:6, assign:"Ar-CH₃"}, {p:2.58, m:"q", i:4, assign:"N-CH₂"}, {p:3.28, m:"s", i:2, assign:"CO-CH₂"}, {p:6.98, m:"m", i:3, assign:"Ar-H"}] },
+    { name: "Naproxen", smiles: "COc1ccc2cc(C(C)C(=O)O)ccc2c1", formula: "C₁₄H₁₄O₃", peaks: [{p:1.57, m:"d", i:3, assign:"CH-CH₃"}, {p:3.87, m:"q", i:1, assign:"α-CH"}, {p:3.92, m:"s", i:3, assign:"O-CH₃"}, {p:7.14, m:"m", i:2, assign:"Ar-H"}, {p:7.42, m:"dd", i:1, assign:"Ar-H"}, {p:7.70, m:"m", i:3, assign:"Ar-H"}] },
+    { name: "Cinnamic Acid", smiles: "OC(=O)/C=C/c1ccccc1", formula: "C₉H₈O₂", peaks: [{p:6.47, m:"d", i:1, assign:"=CH-COOH"}, {p:7.40, m:"m", i:3, assign:"Ar-H"}, {p:7.55, m:"m", i:2, assign:"Ar-H (o)"}, {p:7.75, m:"d", i:1, assign:"Ar-CH="}] },
+    { name: "Menthol", smiles: "C[C@@H]1CC[C@@H](C(C)C)[C@H](O)C1", formula: "C₁₀H₂₀O", peaks: [{p:0.82, m:"d", i:3, assign:"CH₃"}, {p:0.92, m:"m", i:6, assign:"(CH₃)₂"}, {p:1.10, m:"m", i:3, assign:"CH₂, CH"}, {p:1.45, m:"m", i:3, assign:"CH₂, CH"}, {p:1.65, m:"m", i:2, assign:"CH₂"}, {p:3.42, m:"m", i:1, assign:"CH-OH"}] },
+    { name: "Coumarin", smiles: "O=c1ccc2ccccc2o1", formula: "C₉H₆O₂", peaks: [{p:6.42, m:"d", i:1, assign:"=CH (C₃)"}, {p:7.28, m:"m", i:2, assign:"Ar-H"}, {p:7.52, m:"m", i:1, assign:"Ar-H"}, {p:7.69, m:"d", i:1, assign:"Ar-H"}, {p:7.72, m:"d", i:1, assign:"=CH (C₄)"}] },
+    { name: "Salicylaldehyde", smiles: "Oc1ccccc1C=O", formula: "C₇H₆O₂", peaks: [{p:6.98, m:"m", i:2, assign:"Ar-H"}, {p:7.46, m:"m", i:1, assign:"Ar-H"}, {p:7.56, m:"d", i:1, assign:"Ar-H"}, {p:9.90, m:"s", i:1, assign:"CHO"}] },
+    { name: "Methyl Cinnamate", smiles: "COC(=O)/C=C/c1ccccc1", formula: "C₁₀H₁₀O₂", peaks: [{p:3.80, m:"s", i:3, assign:"O-CH₃"}, {p:6.45, m:"d", i:1, assign:"=CH-CO"}, {p:7.38, m:"m", i:3, assign:"Ar-H"}, {p:7.53, m:"m", i:2, assign:"Ar-H"}, {p:7.70, m:"d", i:1, assign:"Ar-CH="}] },
+    { name: "Thymol", smiles: "Cc1cc(C(C)C)c(O)cc1", formula: "C₁₀H₁₄O", peaks: [{p:1.23, m:"d", i:6, assign:"(CH₃)₂"}, {p:2.27, m:"s", i:3, assign:"Ar-CH₃"}, {p:3.16, m:"sept", i:1, assign:"CH"}, {p:6.64, m:"s", i:1, assign:"Ar-H"}, {p:6.73, m:"d", i:1, assign:"Ar-H"}, {p:7.05, m:"d", i:1, assign:"Ar-H"}] },
+    { name: "Catechol", smiles: "Oc1ccccc1O", formula: "C₆H₆O₂", peaks: [{p:6.79, m:"m", i:2, assign:"Ar-H"}, {p:6.90, m:"m", i:2, assign:"Ar-H"}] },
+    { name: "4-Hydroxybenzoic Acid", smiles: "OC(=O)c1ccc(O)cc1", formula: "C₇H₆O₃", peaks: [{p:6.84, m:"d", i:2, assign:"Ar-H (near OH)"}, {p:7.88, m:"d", i:2, assign:"Ar-H (near COOH)"}] },
+    { name: "Piperonyl Alcohol", smiles: "OCc1ccc2OCOc2c1", formula: "C₈H₈O₃", peaks: [{p:4.53, m:"s", i:2, assign:"CH₂-OH"}, {p:5.95, m:"s", i:2, assign:"O-CH₂-O"}, {p:6.78, m:"m", i:3, assign:"Ar-H"}] },
+    { name: "Guaiacol", smiles: "COc1ccccc1O", formula: "C₇H₈O₂", peaks: [{p:3.89, m:"s", i:3, assign:"O-CH₃"}, {p:6.80, m:"m", i:3, assign:"Ar-H"}, {p:6.95, m:"m", i:1, assign:"Ar-H"}] },
+    { name: "Dimethyl Terephthalate", smiles: "COC(=O)c1ccc(C(=O)OC)cc1", formula: "C₁₀H₁₀O₄", peaks: [{p:3.94, m:"s", i:6, assign:"O-CH₃"}, {p:8.10, m:"s", i:4, assign:"Ar-H"}] },
+    { name: "Gallic Acid", smiles: "OC(=O)c1cc(O)c(O)c(O)c1", formula: "C₇H₆O₅", peaks: [{p:7.06, m:"s", i:2, assign:"Ar-H"}] },
+    { name: "Diethyl Malonate", smiles: "CCOC(=O)CC(=O)OCC", formula: "C₇H₁₂O₄", peaks: [{p:1.27, m:"t", i:6, assign:"CH₃"}, {p:3.37, m:"s", i:2, assign:"CO-CH₂-CO"}, {p:4.19, m:"q", i:4, assign:"O-CH₂"}] },
+    { name: "Ethyl Cyanoacetate", smiles: "CCOC(=O)CC#N", formula: "C₅H₇NO₂", peaks: [{p:1.30, m:"t", i:3, assign:"CH₃"}, {p:3.44, m:"s", i:2, assign:"CH₂"}, {p:4.24, m:"q", i:2, assign:"O-CH₂"}] },
+    { name: "Piperonal", smiles: "O=Cc1ccc2OCOc2c1", formula: "C₈H₆O₃", peaks: [{p:6.06, m:"s", i:2, assign:"O-CH₂-O"}, {p:6.93, m:"d", i:1, assign:"Ar-H"}, {p:7.33, m:"d", i:1, assign:"Ar-H"}, {p:7.42, m:"dd", i:1, assign:"Ar-H"}, {p:9.81, m:"s", i:1, assign:"CHO"}] },
+    { name: "Ethyl Benzoylacetate", smiles: "CCOC(=O)CC(=O)c1ccccc1", formula: "C₁₁H₁₂O₃", peaks: [{p:1.22, m:"t", i:3, assign:"CH₃"}, {p:4.02, m:"s", i:2, assign:"CO-CH₂-CO"}, {p:4.21, m:"q", i:2, assign:"O-CH₂"}, {p:7.45, m:"m", i:3, assign:"Ar-H"}, {p:7.97, m:"d", i:2, assign:"Ar-H"}] },
+  ]
+};
+
+// Pascal triangle patterns for splitting
+const PASCAL = { 
+  s: [1], d: [1,1], t: [1,2,1], q: [1,3,3,1], 
+  quint: [1,4,6,4,1], sept: [1,6,15,20,15,6,1], 
+  dd: [1,1,0,1,1],
+  m: [0.5, 0.8, 1, 0.95, 0.7, 0.4]
+};
+
+const MULT_LABELS = { s: "singlet", d: "doublet", t: "triplet", q: "quartet", sept: "septet", dd: "dd", m: "multiplet", quint: "quintet" };
+const SOLVENT_NAMES = { "7.26": "CDCl₃", "2.50": "DMSO-d₆", "3.31": "MeOD", "4.79": "D₂O" };
+
+let rdkit = null, currentMol = null, currentOptions = [], roundHistory = [], 
+    correctCount = 0, wrongCount = 0, roundOver = false, currentLevelData = [],
+    roundIndex = 0, totalRounds = 0, usedMolecules = new Set();
+
+// Initialize RDKit
+const rdkitTimeout = setTimeout(() => {
+  document.getElementById('loader').innerHTML = '<p style="color:#ff453a;font-size:13px;text-align:center;padding:20px;">RDKit failed to load.<br>Please refresh the page.</p>';
+}, 15000);
+
+window.initRDKitModule().then(m => {
+  clearTimeout(rdkitTimeout);
+  rdkit = m;
+  document.getElementById('loader').style.display = 'none';
+  const total = LEVELS[1].length + LEVELS[2].length + LEVELS[3].length;
+  document.getElementById('mol-count-display').textContent = `${total} molecules in database`;
+  document.getElementById('count1').textContent = `${LEVELS[1].length} molecules`;
+  document.getElementById('count2').textContent = `${LEVELS[2].length} molecules`;
+  document.getElementById('count3').textContent = `${LEVELS[3].length} molecules`;
+}).catch(err => {
+  clearTimeout(rdkitTimeout);
+  console.error('RDKit init failed:', err);
+  document.getElementById('loader').innerHTML = '<p style="color:#ff453a;font-size:13px;text-align:center;padding:20px;">RDKit failed to load.<br>Please refresh the page.</p>';
+});
+
+// Parallax
+window.addEventListener('mousemove', e => {
+    document.body.style.setProperty('--m-x', e.clientX + 'px');
+    document.body.style.setProperty('--m-y', e.clientY + 'px');
+});
+
+function startGame(lvl) {
+    currentLevelData = [...LEVELS[lvl]];
+    totalRounds = currentLevelData.length;
+    roundIndex = 0;
+    usedMolecules.clear();
+    document.getElementById('start-page').style.display = 'none';
+    document.getElementById('game-page').style.display = 'block';
+    nextRound();
+}
+
+function getUnusedMol() {
+    const available = currentLevelData.filter(m => !usedMolecules.has(m.name));
+    if (available.length === 0) {
+        usedMolecules.clear();
+        return currentLevelData[Math.floor(Math.random() * currentLevelData.length)];
+    }
+    return available[Math.floor(Math.random() * available.length)];
+}
+
+function nextRound() {
+    if(currentMol) roundHistory.push({mol: currentMol, opts: currentOptions});
+    document.getElementById('backBtn').disabled = roundHistory.length === 0;
+    document.getElementById('explanation').classList.remove('show');
+    roundOver = false;
+    roundIndex++;
+    
+    currentMol = getUnusedMol();
+    usedMolecules.add(currentMol.name);
+    
+    // Pick 3 distractors (different from correct)
+    let others = currentLevelData.filter(m => m.name !== currentMol.name).sort(() => 0.5 - Math.random());
+    currentOptions = [currentMol, others[0], others[1]].filter(Boolean).sort(() => 0.5 - Math.random());
+    
+    // Update progress
+    const pct = Math.min(100, (roundIndex / totalRounds) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    
+    renderRound();
+}
+
+function prevRound() {
+    if(!roundHistory.length) return;
+    const last = roundHistory.pop();
+    currentMol = last.mol; currentOptions = last.opts;
+    document.getElementById('backBtn').disabled = roundHistory.length === 0;
+    document.getElementById('explanation').classList.remove('show');
+    roundOver = false;
+    renderRound();
+}
+
+function renderRound() {
+    const container = document.getElementById('choices');
+    container.innerHTML = '';
+    currentOptions.forEach((opt, i) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+            <canvas id="m-${i}" class="mol-canvas"></canvas>
+            <div class="card-name">${opt.name}</div>
+            ${opt.formula ? `<div class="card-formula">${opt.formula}</div>` : ''}
+        `;
+        card.onclick = () => {
+            if(roundOver) return;
+            if(opt.name === currentMol.name) {
+                card.classList.add('correct'); roundOver = true;
+                correctCount++; document.getElementById('correct-count').innerText = correctCount;
+                showExplanation();
+                setTimeout(nextRound, 2000);
+            } else {
+                card.classList.add('wrong');
+                wrongCount++; document.getElementById('wrong-count').innerText = wrongCount;
+            }
+        };
+        container.appendChild(card);
+        setTimeout(() => drawMol(opt.smiles, `m-${i}`), 0);
+    });
+    drawSpectrum();
+}
+
+function showExplanation() {
+    const el = document.getElementById('explanation');
+    const content = document.getElementById('explanationContent');
+    let html = `<p style="margin:0 0 10px; font-size:0.9rem; color: var(--text-secondary)"><strong style="color:var(--text-primary)">${currentMol.name}</strong> ${currentMol.formula || ''}</p>`;
+    html += `<table><tr><th>δ (ppm)</th><th>Mult.</th><th>H</th><th>Assignment</th></tr>`;
+    currentMol.peaks.forEach(pk => {
+        html += `<tr>
+            <td>${pk.p.toFixed(2)}</td>
+            <td>${MULT_LABELS[pk.m] || pk.m}</td>
+            <td>${pk.i}H</td>
+            <td style="font-family:'DM Sans',sans-serif">${pk.assign || '—'}</td>
+        </tr>`;
+    });
+    html += `</table>`;
+    content.innerHTML = html;
+    el.classList.add('show');
+}
+
+function drawMol(smiles, id) {
+    if (!rdkit) return;
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const attempt = () => {
+        if (canvas.offsetWidth === 0) { requestAnimationFrame(attempt); return; }
+        try {
+            const mol = rdkit.get_mol(smiles);
+            if (!mol) return;
+            canvas.width = canvas.offsetWidth * 2;
+            canvas.height = canvas.offsetHeight * 2;
+            mol.draw_to_canvas_with_highlights(canvas, JSON.stringify({
+                width: canvas.width, height: canvas.height,
+                bondLineWidth: 2.5, symbolColor: [0,0,0,1],
+                clearBackground: false, padding: 0.2,
+                centreMoleculesBeforeDrawing: true
+            }));
+            mol.delete();
+        } catch(e) { console.warn('RDKit draw error:', e); }
+    };
+    requestAnimationFrame(attempt);
+}
+
+function drawSpectrum() {
+    const canvas = document.getElementById('nmr');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width, h = rect.height;
+    const padL = 50, padR = 30, padB = 40, padT = 15;
+    const plotW = w - padL - padR, plotH = h - padT - padB, baselineY = h - padB;
+    ctx.clearRect(0, 0, w, h);
+
+    const shiftVal = document.getElementById('solventSelect').value;
+    const shift = parseFloat(shiftVal);
+    const showInt  = document.getElementById('intsOn').checked;
+    const showSolv = document.getElementById('solvOn').checked;
+    const showMult = document.getElementById('multiOn').checked;
+    document.getElementById('solventLabel').innerText = "REF: " + SOLVENT_NAMES[shiftVal];
+
+    const ppmMin = -0.5, ppmMax = 12.5, ppmRange = ppmMax - ppmMin;
+    const toX = ppm => padL + plotW * (1 - (ppm - ppmMin) / ppmRange);
+
+    // Grid lines
+    ctx.strokeStyle = "#f0f0f0"; ctx.lineWidth = 1;
+    for (let i = 0; i <= 12; i++) {
+        const x = toX(i);
+        ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, baselineY); ctx.stroke();
+    }
+    // Minor ticks
+    ctx.strokeStyle = "#e8e8e8"; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 120; i++) {
+        const x = toX(i / 10);
+        ctx.beginPath(); ctx.moveTo(x, baselineY - 3); ctx.lineTo(x, baselineY); ctx.stroke();
+    }
+    // Baseline
+    ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(padL, baselineY); ctx.lineTo(w - padR, baselineY); ctx.stroke();
+    // PPM labels
+    ctx.fillStyle = "#666"; ctx.font = "bold 11px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
+    for (let i = 0; i <= 12; i++) ctx.fillText(i.toString(), toX(i), baselineY + 16);
+    ctx.fillText("δ (ppm)", toX(-0.2), baselineY + 30);
+
+    if (!currentMol) return;
+
+    // ── Peak parameters ───────────────────────────────────────────────────────
+    // J is deliberately exaggerated (~28 Hz visual) so individual lines of
+    // doublets/triplets/quartets are clearly separated on screen.
+    const J      = 0.070;   // visual J coupling (ppm) — exaggerated for visibility
+    const gamma  = 0.0028;  // Lorentzian HWHM for sharp lines (~1.1 Hz at 400 MHz)
+    const gammaM = 0.022;   // HWHM for multiplet envelopes (complex coupling)
+    const OVER   = 8;       // supersampling factor — prevents narrow lines falling between pixels
+
+    const allPeaks = [...currentMol.peaks];
+    if (showSolv) allPeaks.push({p: shift, m: 's', i: 0, isSolvent: true, assign: SOLVENT_NAMES[shiftVal]});
+
+    // Store for tooltip
+    window._nmrPeakInfo = currentMol.peaks.map(pk => ({
+        ppm: pk.p, x: toX(pk.p),
+        mult: MULT_LABELS[pk.m] || pk.m,
+        i: pk.i, assign: pk.assign || ''
+    }));
+
+    // ── Expand peaks into individual Lorentzian lines ─────────────────────────
+    const subPeaks = [];
+    allPeaks.forEach(pk => {
+        const rawH = pk.isSolvent ? 3 : pk.i;
+
+        if (pk.m === 'dd') {
+            // Doublet-of-doublets: 4 lines at -(J1±J2)/2, +(J1±J2)/2
+            const J1 = J, J2 = J * 0.50;
+            [-(J1+J2)/2, -(J1-J2)/2, +(J1-J2)/2, +(J1+J2)/2].forEach(off => {
+                subPeaks.push({ ppm: pk.p + off, h: rawH, g: gamma, solv: !!pk.isSolvent });
+            });
+            return;
+        }
+
+        const pattern = PASCAL[pk.m] || PASCAL.m;
+        const maxP   = Math.max(...pattern);
+        const isMult = pk.m === 'm';
+        const g      = isMult ? gammaM : gamma;
+        const sp     = isMult ? 0.014 : J;   // spacing between adjacent lines
+
+        pattern.forEach((val, idx) => {
+            if (val === 0) return;            // skip explicit gaps (legacy dd guard)
+            subPeaks.push({
+                ppm: pk.p + (idx - (pattern.length - 1) / 2) * sp,
+                h:   rawH * (val / maxP),
+                g,   solv: !!pk.isSolvent
+            });
+        });
+    });
+
+    // ── Build spectrum with 8× supersampling ──────────────────────────────────
+    // Fine grid prevents narrow Lorentzians being missed by integer pixel steps.
+    const nPx    = Math.ceil(plotW);
+    const nFine  = nPx * OVER;
+    const mFine  = new Float64Array(nFine);
+    const sFine  = new Float64Array(nFine);
+
+    for (let i = 0; i < nFine; i++) {
+        const ppm = ppmMax - (i / nFine) * ppmRange;
+        for (const sp of subPeaks) {
+            const v = sp.h / (1 + ((ppm - sp.ppm) / sp.g) ** 2);
+            if (sp.solv) sFine[i] += v; else mFine[i] += v;
+        }
+    }
+
+    // Downsample: take the MAX within each OVER-group so peak heights are preserved
+    const molSpec  = new Float64Array(nPx);
+    const solvSpec = new Float64Array(nPx);
+    for (let px = 0; px < nPx; px++) {
+        let mMax = 0, sMax = 0;
+        for (let k = 0; k < OVER; k++) {
+            const fi = px * OVER + k;
+            if (mFine[fi] > mMax) mMax = mFine[fi];
+            if (sFine[fi] > sMax) sMax = sFine[fi];
+        }
+        molSpec[px]  = mMax;
+        solvSpec[px] = sMax;
+    }
+
+    // Normalize to canvas height
+    let maxMol = 0, maxSolv = 0;
+    for (let i = 0; i < nPx; i++) {
+        if (molSpec[i]  > maxMol)  maxMol  = molSpec[i];
+        if (solvSpec[i] > maxSolv) maxSolv = solvSpec[i];
+    }
+    const molScale  = maxMol  > 0 ? (plotH * 0.78) / maxMol  : 1;
+    const solvScale = maxSolv > 0 ? (plotH * 0.30) / maxSolv : 1;
+
+    // ── Draw molecule spectrum (filled Lorentzian curve) ──────────────────────
+    ctx.beginPath();
+    ctx.moveTo(padL, baselineY);
+    for (let px = 0; px < nPx; px++) ctx.lineTo(padL + px, baselineY - molSpec[px] * molScale);
+    ctx.lineTo(padL + nPx - 1, baselineY);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(17,17,17,0.05)';
+    ctx.fill();
+    ctx.beginPath();
+    for (let px = 0; px < nPx; px++) {
+        if (px === 0) ctx.moveTo(padL, baselineY - molSpec[0] * molScale);
+        else ctx.lineTo(padL + px, baselineY - molSpec[px] * molScale);
+    }
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // ── Solvent peak (red overlay) ────────────────────────────────────────────
+    if (showSolv && maxSolv > 0) {
+        ctx.beginPath();
+        for (let px = 0; px < nPx; px++) {
+            const y = baselineY - solvSpec[px] * solvScale;
+            if (px === 0) ctx.moveTo(padL, y); else ctx.lineTo(padL + px, y);
+        }
+        ctx.strokeStyle = 'rgba(255,69,58,0.7)'; ctx.lineWidth = 1.2;
+        ctx.stroke();
+    }
+
+    // ── Integral curves — separate red sigmoid per peak ───────────────────────
+    if (showInt) {
+        const intBaseY  = baselineY - 15;  // shared baseline for all traces
+        const sigK      = 5.0;             // sigmoid steepness
+        const flatPad   = 0.20;            // flat-section padding (ppm) on each side
+
+        // Proportional scaling: all integrals relative to the largest proton count
+        const maxI     = Math.max(...currentMol.peaks.map(pk => pk.i));
+        const maxRiseH = plotH * 0.38;    // tallest integral = 38% of plot height
+
+        ctx.lineWidth = 1.8;
+        ctx.font = "bold 10px 'JetBrains Mono', monospace";
+
+        // Collision tracking for nH labels [ {x, y, w} ]
+        const usedIntLabels = [];
+
+        currentMol.peaks.forEach(pk => {
+            const pattern   = PASCAL[pk.m] || PASCAL.m;
+            const nLines    = pattern.filter(v => v > 0).length;
+            // Transition zone half-width: covers the actual splitting pattern
+            const coreSpan  = Math.max(0.22, J * (nLines - 1) / 2 + 0.06);
+            // Scale proportionally; enforce a minimum of 14 px so 1H is always visible
+            const riseH     = Math.max(14, (pk.i / maxI) * maxRiseH);
+
+            // Full window = core ± flat padding  (left = high ppm side)
+            const leftX  = toX(pk.p + coreSpan + flatPad);
+            const rightX = toX(pk.p - coreSpan - flatPad);
+            const span   = Math.ceil(rightX - leftX);
+
+            ctx.strokeStyle = 'rgba(210,30,30,0.88)';
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i <= span; i++) {
+                const px_abs = leftX + i;
+                if (px_abs < padL || px_abs > padL + plotW) continue;
+                const ppm = ppmMax - ((px_abs - padL) / plotW) * ppmRange;
+                // Normalise position: +1 at high-ppm edge, –1 at low-ppm edge
+                const t = (ppm - pk.p) / (coreSpan * 0.45);
+                const s = 0.5 - Math.atan(t * sigK) / Math.PI; // 0→1 left to right
+                const y = intBaseY - s * riseH;
+                if (!started) { ctx.moveTo(px_abs, y); started = true; }
+                else ctx.lineTo(px_abs, y);
+            }
+            ctx.stroke();
+
+            // nH label: placed at right (low-ppm) end, above the plateau
+            // Collision detection: if overlapping a previous label, shift vertically
+            const labelText = pk.i + 'H';
+            const textW     = ctx.measureText(labelText).width;
+            const labelX    = Math.min(rightX + 4, padL + plotW - textW - 2);
+            let   labelY    = intBaseY - riseH - 3;
+            for (let tries = 0; tries < 6; tries++) {
+                const clash = usedIntLabels.some(sl =>
+                    Math.abs(sl.y - labelY) < 12 &&
+                    labelX < sl.x + sl.w + 4 &&
+                    labelX + textW > sl.x - 4
+                );
+                if (!clash) break;
+                labelY += 13;   // shift down one line
+            }
+            usedIntLabels.push({ x: labelX, y: labelY, w: textW });
+
+            ctx.fillStyle = '#cc2020';
+            ctx.textAlign = 'left';
+            ctx.fillText(labelText, labelX, labelY);
+        });
+    }
+
+    // ── Peak labels (multiplicity + δ) ─────────────────────────────────────────
+    // ── Peak labels: multiplicity above peak, δ below baseline ──────────────
+    // Sort high→low ppm (left→right) for label collision detection
+    const molPeaks = allPeaks.filter(pk => !pk.isSolvent)
+                              .slice().sort((a, b) => b.p - a.p);
+    let lastDeltaLabelX = -999;
+    molPeaks.forEach(pk => {
+        const xC = toX(pk.p);
+        const px = Math.round(xC - padL);
+        let localMax = 0;
+        for (let j = Math.max(0, px - 15); j < Math.min(nPx, px + 15); j++) {
+            if (molSpec[j] > localMax) localMax = molSpec[j];
+        }
+        const peakY = baselineY - localMax * molScale;
+
+        if (showMult) {
+            ctx.fillStyle = "#999"; ctx.font = "10px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
+            ctx.fillText(pk.m, xC, Math.max(padT + 10, peakY - 10));
+        }
+        // Only draw δ label if it won't collide with the previous one (≥ 30 px gap)
+        if (xC - lastDeltaLabelX >= 30) {
+            ctx.fillStyle = "#aaa"; ctx.font = "9px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
+            ctx.fillText(pk.p.toFixed(2), xC, baselineY + 30);
+            lastDeltaLabelX = xC;
+        }
+    });
+
+    // TMS reference
+    ctx.fillStyle = "#ccc"; ctx.font = "9px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
+    ctx.fillText("TMS", toX(0), baselineY - 10);
+    ctx.strokeStyle = "#ccc"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(toX(0), baselineY); ctx.lineTo(toX(0), baselineY - 6); ctx.stroke();
+}
+
+// Peak tooltip on spectrum hover / tap
+(function() {
+    const nmrCanvas = document.getElementById('nmr');
+    const peakInfo  = document.getElementById('peakInfo');
+    let touchHideTimer = null;
+
+    function showTooltip(clientX, clientY) {
+        if (!currentMol || !window._nmrPeakInfo) { peakInfo.style.display = 'none'; return; }
+        const canvasRect = nmrCanvas.getBoundingClientRect();
+        const specBox    = nmrCanvas.closest('.spectrum-box');
+        const boxRect    = specBox.getBoundingClientRect();
+        const mx = clientX - canvasRect.left;
+
+        let nearest = null, minDist = Infinity;
+        window._nmrPeakInfo.forEach(pk => {
+            const dist = Math.abs(mx - pk.x);
+            if (dist < minDist) { minDist = dist; nearest = pk; }
+        });
+
+        // On mobile use a wider snap radius (60 px) since finger precision is lower
+        const snapR = ('ontouchstart' in window) ? 60 : 32;
+        if (nearest && minDist < snapR) {
+            let tipLeft = clientX - boxRect.left + 14;
+            if (tipLeft > boxRect.width - 200) tipLeft = clientX - boxRect.left - 170;
+            peakInfo.style.left    = tipLeft + 'px';
+            peakInfo.style.top     = (clientY - boxRect.top - 36) + 'px';
+            peakInfo.style.display = 'block';
+            peakInfo.innerHTML = `δ ${nearest.ppm.toFixed(2)} ppm · ${nearest.mult} · ${nearest.i}H` +
+                (nearest.assign ? ` · ${nearest.assign}` : '');
+        } else {
+            peakInfo.style.display = 'none';
+        }
+    }
+
+    nmrCanvas.addEventListener('mousemove',  e => showTooltip(e.clientX, e.clientY));
+    nmrCanvas.addEventListener('mouseleave', () => { peakInfo.style.display = 'none'; });
+
+    // Touch support: show on tap/drag, hide 1.5 s after finger lifts
+    nmrCanvas.addEventListener('touchstart', function(e) {
+        clearTimeout(touchHideTimer);
+        const t = e.touches[0];
+        showTooltip(t.clientX, t.clientY);
+        e.preventDefault();   // stop page scroll while inspecting spectrum
+    }, { passive: false });
+    nmrCanvas.addEventListener('touchmove', function(e) {
+        const t = e.touches[0];
+        showTooltip(t.clientX, t.clientY);
+        e.preventDefault();
+    }, { passive: false });
+    nmrCanvas.addEventListener('touchend', () => {
+        touchHideTimer = setTimeout(() => { peakInfo.style.display = 'none'; }, 1500);
+    });
+})();
+
+// Handle window resize
+window.addEventListener('resize', () => { if(currentMol) drawSpectrum(); });
+</script>
+</body>
+</html>
